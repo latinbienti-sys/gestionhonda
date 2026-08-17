@@ -293,7 +293,6 @@ def main():
 <body>
 <div class="topbar">
   <h1>🚗 Dashboard Financiamiento — Honda Mérida</h1>
-  <p>Clientes por entidad (ARCA · PIVCA · Banesco · Provincial) · Facturados y Aprobados · Datos del CRM latinbienmotors.com · Generado {now}</p>
 </div>
 
 <div class="wrap">
