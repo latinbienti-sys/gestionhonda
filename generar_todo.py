@@ -10,6 +10,7 @@ Credenciales via variables de entorno: ODOO_USER y ODOO_PASSWORD.
 Este script NO contiene credenciales en texto plano.
 """
 import os
+import shutil
 import subprocess
 import sys
 
@@ -26,6 +27,16 @@ def main():
         if code != 0:
             print("ERROR en", s, "exit:", code)
             sys.exit(code)
+
+    # Publicar el dashboard como index.html en la raiz (GitHub Pages)
+    src = os.path.join(scripts_dir, "crm_dashboard.html")
+    dst = os.path.join(HERE, "index.html")
+    if os.path.exists(src):
+        shutil.copyfile(src, dst)
+        print("Dashboard publicado como index.html")
+    else:
+        print("AVISO: no se encontro crm_dashboard.html")
+
     print("OK: reportes generados.")
 
 
