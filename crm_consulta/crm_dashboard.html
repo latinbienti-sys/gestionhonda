@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard CRM Financiamiento - Honda Mérida</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:#eef1f6; color:#1a1a1a; }
+  .topbar { background:linear-gradient(135deg,#213C83,#15295e); color:#fff; padding:18px 24px; }
+  .topbar h1 { margin:0; font-size:22px; }
+  .topbar p { margin:4px 0 0; color:#cbd5e8; font-size:13px; }
+  .wrap { max-width:1280px; margin:20px auto; padding:0 18px; }
+
+  .kpis { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:20px; }
+  .kpi { flex:1; min-width:150px; background:#fff; border-radius:12px; padding:16px 18px; box-shadow:0 2px 10px rgba(0,0,0,.06); position:relative; overflow:hidden; }
+  .kpi .bar { position:absolute; left:0; top:0; bottom:0; width:5px; }
+  .kpi b { font-size:28px; display:block; letter-spacing:-.5px; }
+  .kpi span { color:#666; font-size:12.5px; }
+  .kpi small { color:#999; font-size:11px; display:block; margin-top:4px; }
+
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:18px; margin-bottom:20px; }
+  .grid .full { grid-column: 1 / -1; }
+  @media (max-width:800px) { .grid { grid-template-columns:1fr; } }
+
+  .card { background:#fff; border-radius:12px; padding:16px 18px; box-shadow:0 3px 12px rgba(0,0,0,.06); }
+  .card h3 { margin:0 0 10px; font-size:15px; color:#213C83; }
+  .chart-box { position:relative; height:300px; }
+
+  .filters { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+  .chip { border:2px solid #d7deee; background:#fff; color:#213C83; border-radius:30px; padding:8px 16px; font-weight:700; font-size:13.5px; cursor:pointer; transition:all .15s; }
+  .chip.active { background:#213C83; color:#fff; border-color:#213C83; }
+  .chip.ent { background:#fff; }
+  .chip.ent.active { color:#fff; }
+  select, input[type=text] { padding:9px 12px; border:1px solid #ccd2e0; border-radius:8px; font-size:14px; font-family:inherit; }
+  .search { flex:1; min-width:200px; }
+
+  .table-wrap { overflow-x:auto; border-radius:10px; border:1px solid #e5e9f2; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { background:#f0f3fa; text-align:left; padding:9px 10px; font-size:11.5px; text-transform:uppercase; letter-spacing:.4px; color:#213C83; position:sticky; top:0; }
+  td { padding:9px 10px; border-bottom:1px solid #eef1f8; vertical-align:top; }
+  tr:hover td { background:#fafcff; }
+  .num { text-align:right; white-space:nowrap; }
+  .tag-pill { display:inline-block; border-radius:20px; padding:2px 10px; font-size:11px; font-weight:700; color:#fff; margin-right:4px; }
+  .estado { display:inline-block; border-radius:20px; padding:3px 10px; font-size:11px; font-weight:700; }
+  .est.FACTURADO { background:#d1fae5; color:#065f46; }
+  .est.APROBADO { background:#ede9fe; color:#5b21b6; }
+  .est.GESTION { background:#fef9c3; color:#854d0e; }
+  .est.OTROS { background:#f3f4f6; color:#374151; }
+  .foot { text-align:center; color:#999; font-size:12px; padding:18px; }
+  .count-line { font-size:13px; color:#666; margin-bottom:8px; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>🚗 Dashboard Financiamiento — Honda Mérida</h1>
+  <p>Clientes por entidad (ARCA · PIVCA · Banesco · Provincial) · Facturados y Aprobados · Datos del CRM latinbienmotors.com · Generado 16/08/2026 21:12</p>
+</div>
+
+<div class="wrap">
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>📊 Clientes por Entidad Financiera</h3>
+      <div class="chart-box"><canvas id="chartEntidades"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>🥧 Distribución de Entidades</h3>
+      <div class="chart-box"><canvas id="chartDonut"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>💰 Montos Aprobados por Entidad</h3>
+      <div class="chart-box"><canvas id="chartMontos"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>✔️ Estado del Proceso por Entidad (Facturado vs Aprobado vs En Gestión)</h3>
+      <div class="chart-box"><canvas id="chartEstado"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card full">
+    <h3>👥 Relación de Clientes</h3>
+    <div class="filters">
+      <span class="chip ent active" data-ent="ALL" style="border-color:#213C83;">Todas</span>
+      <span class="chip ent" data-ent="ARCA" style="border-color:#213C83;">ARCA</span>
+      <span class="chip ent" data-ent="PIVCA" style="border-color:#7c3aed;">PIVCA</span>
+      <span class="chip ent" data-ent="BANESCO" style="border-color:#0a7d2c;">BANESCO</span>
+      <span class="chip ent" data-ent="PROVINCIAL" style="border-color:#b45309;">PROVINCIAL</span>
+      <select id="fEstado">
+        <option value="ALL">Estado: Todos</option>
+        <option value="FACTURADO">Facturados</option>
+        <option value="APROBADO">Aprobados</option>
+        <option value="GESTION">En Gestión / Crédito</option>
+      </select>
+      <input type="text" id="fBuscar" class="search" placeholder="🔍 Buscar por nombre, modelo, asesor...">
+      <span class="chip" id="fmtCsv">⬇️ CSV</span>
+    </div>
+    <div class="count-line" id="countLine"></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Entidad</th><th>Cliente</th><th>Oportunidad / Modelo</th><th>Etapa</th>
+          <th>Estado</th><th>Monto Total</th><th>Monto Aprobado</th><th>Plazo</th>
+          <th>Fecha Aprob.</th><th>Asesor</th><th>Notas internas</th>
+        </tr></thead>
+        <tbody id="tabla"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="foot">Consulta solo-lectura al CRM de Odoo · latinbienmotors.com · Generado el 16/08/2026 21:12</div>
+</div>
+
+<script>
+const DATA = [{"id": 62564, "nombre": "MARIA SOLEDAD GONZALEZ REYES", "oportunidad": "Oportunidad de MARIA SOLEDAD GONZALEZ REYES HR-V LX", "modelo": "HR-V LX", "etapa": "Gestion de Credito", "etapa_original": "Gestión de Crédito", "estado": "GESTION", "entidades": ["ARCA"], "entidad_principal": "ARCA", "entidad_colores": {"ARCA": "#213C83"}, "fecha_aprobacion": "", "plazo": "36", "monto_total": 38937.52, "monto_aprobado": 0.0, "asesor": "ANGEL DAVID PUENTES", "telefono": "", "email": "Msdivol@gmail.com", "bancos": "", "ci_rif": 5960695, "notas": "SE LE ENTREGO LA PROFORMA PARA FINANCIAMIENTO PIVCA A 36 MESES, QUEDO EN CONFIRMAR ENTRE LUNES 27 O MARTES 28 DE JULIO\nEN TRAMITE DE COMPLETAR LOS RECAUDOS FALTANTE PARA EL ENVIO DEL EXPEDIENTE", "tags_extra": "EN SEGUIMIENTO, FASE LINEA DE CREDITO"}, {"id": 62542, "nombre": "ORLANDO JOSE ALBORNOZ RODRIGUEZ", "oportunidad": "ORLANDO JOSE ALBORNOZ RODRIGUEZ", "modelo": "", "etapa": "Gestion de Credito", "etapa_original": "Gestión de Crédito", "estado": "GESTION", "entidades": ["BANESCO"], "entidad_principal": "BANESCO", "entidad_colores": {"BANESCO": "#0a7d2c"}, "fecha_aprobacion": "", "plazo": "", "monto_total": 43358.28, "monto_aprobado": 0.0, "asesor": "GERARDO JOSE RAMIREZ FERNANDEZ", "telefono": "", "email": "orlandoalbornoz21@gmail.com", "bancos": "", "ci_rif": 16655955, "notas": "En proceso de evaluación por parte de la entidad financiera", "tags_extra": ""}, {"id": 62647, "nombre": "MARLY CECILIA VIELMA DE PAREDES", "oportunidad": "Oportunidad de MARLY CECILIA VIELMA DE PAREDES", "modelo": "", "etapa": "Gestion de Credito", "etapa_original": "Gestión de Crédito", "estado": "GESTION", "entidades": ["ARCA"], "entidad_principal": "ARCA", "entidad_colores": {"ARCA": "#213C83"}, "fecha_aprobacion": "", "plazo": "24", "monto_total": 34158.32, "monto_aprobado": 0.0, "asesor": "ROSMILA VALLADARES", "telefono": "", "email": "Marlyvielma@gmail.com", "bancos": "", "ci_rif": 11952710, "notas": "Envió del expediente el 14/08/2026, para su revisión por parte del ejecutivo de arca, para luego ser enviado al área de análisis de crédito", "tags_extra": ""}, {"id": 62709, "nombre": "CHRISTAVEL CONTRERAS ZERPA", "oportunidad": "Oportunidad de CHRISTAVEL CONTRERAS ZERPA", "modelo": "", "etapa": "Seguimiento", "etapa_original": "Seguimiento", "estado": "GESTION", "entidades": ["PROVINCIAL"], "entidad_principal": "PROVINCIAL", "entidad_colores": {"PROVINCIAL": "#b45309"}, "fecha_aprobacion": "", "plazo": "", "monto_total": 0.0, "monto_aprobado": 0.0, "asesor": "ROSMILA VALLADARES", "telefono": "", "email": "", "bancos": "", "ci_rif": 14806645, "notas": "", "tags_extra": ""}, {"id": 62661, "nombre": "JESUS ALFONSO UGUETO LEAL", "oportunidad": "Oportunidad de JESUS ALFONSO UGUETO LEAL", "modelo": "", "etapa": "Gestion de Credito", "etapa_original": "Gestión de Crédito", "estado": "GESTION", "entidades": ["ARCA"], "entidad_principal": "ARCA", "entidad_colores": {"ARCA": "#213C83"}, "fecha_aprobacion": "", "plazo": "36", "monto_total": 43358.28, "monto_aprobado": 0.0, "asesor": "ROSMILA VALLADARES", "telefono": "", "email": "jesusugueto_25@hotmail.com", "bancos": "", "ci_rif": 20605144, "notas": "EXPEDIENTE ENVIADO AL DEPARTAMENTO DE ANALISIS DE CREDITO PARA SU APROBACION EL DIAS 13/08/2026", "tags_extra": ""}, {"id": 62575, "nombre": "YOANA SORIMAR LACRUZ QUINTERO", "oportunidad": "Oportunidad de YOANA LACRUZ QUINTERO", "modelo": "", "etapa": "Credito Aprobado", "etapa_original": "Crédito Aprobado", "estado": "APROBADO", "entidades": ["BANESCO"], "entidad_principal": "BANESCO", "entidad_colores": {"BANESCO": "#0a7d2c"}, "fecha_aprobacion": "2026-07-29", "plazo": "48", "monto_total": 38937.52, "monto_aprobado": 27256.26, "asesor": "ROSMILA VALLADARES", "telefono": "", "email": "", "bancos": "", "ci_rif": "", "notas": "Pendiente por reserva de dominio y liquidación por parte de la entidad financiera", "tags_extra": ""}, {"id": 62573, "nombre": "ALEJANDRO RAFAEL LEZAMA SÁNCHEZ", "oportunidad": "Oportunidad de ALEJANDRO RAFAEL LEZAMA SÁNCHEZ WR-V EXL", "modelo": "WR-V EXL", "etapa": "Gestion de Credito", "etapa_original": "Gestión de Crédito", "estado": "GESTION", "entidades": ["ARCA"], "entidad_principal": "ARCA", "entidad_colores": {"ARCA": "#213C83"}, "fecha_aprobacion": "", "plazo": "", "monto_total": 0.0, "monto_aprobado": 0.0, "asesor": "DIEGO ARMANDO FERNANDEZ", "telefono": "", "email": "", "bancos": "", "ci_rif": "", "notas": "", "tags_extra": "EN SEGUIMIENTO, ANTICIPO"}, {"id": 62517, "nombre": "ANTONIO JOSE ARAQUE FERNANDEZ", "oportunidad": "Oportunidad de ANTONIO JOSE ARAQUE FERNANDEZ", "modelo": "", "etapa": "Asesoria", "etapa_original": "Asesoria", "estado": "GESTION", "entidades": ["PIVCA"], "entidad_principal": "PIVCA", "entidad_colores": {"PIVCA": "#7c3aed"}, "fecha_aprobacion": "", "plazo": "", "monto_total": 38937.52, "monto_aprobado": 0.0, "asesor": "GERARDO JOSE RAMIREZ FERNANDEZ", "telefono": "", "email": "antonioaraque2021@gmail.com", "bancos": "", "ci_rif": 19422214, "notas": "Pendiente por recaudos por parte de cliente", "tags_extra": ""}, {"id": 62446, "nombre": "YADIRA COROMOTO ARIZA", "oportunidad": "Oportunidad de YADIRA COROMOTO ARIZA", "modelo": "HONDA WR-V 1.5L A/T EXL 2026", "etapa": "Facturado Credito", "etapa_original": "Facturado Crédito", "estado": "FACTURADO", "entidades": ["BANESCO"], "entidad_principal": "BANESCO", "entidad_colores": {"BANESCO": "#0a7d2c"}, "fecha_aprobacion": "2026-07-31", "plazo": "48", "monto_total": 38937.52, "monto_aprobado": 22000.0, "asesor": "ROSMILA VALLADARES", "telefono": "", "email": "", "bancos": "", "ci_rif": "", "notas": "Pendiente por reserva de dominio y liquidación por parte de la entidad Financiera", "tags_extra": "ANTICIPO"}, {"id": 62378, "nombre": "GUSTAVO BALZA RANGEL", "oportunidad": "Oportunidad de GUSTAVO BALZA RANGEL", "modelo": "", "etapa": "Facturado Credito", "etapa_original": "Facturado Crédito", "estado": "FACTURADO", "entidades": ["PROVINCIAL"], "entidad_principal": "PROVINCIAL", "entidad_colores": {"PROVINCIAL": "#b45309"}, "fecha_aprobacion": "", "plazo": "", "monto_total": 0.0, "monto_aprobado": 0.0, "asesor": "ANGEL DAVID PUENTES", "telefono": "", "email": "", "bancos": "", "ci_rif": 8041851, "notas": "", "tags_extra": "ANTICIPO, OFICINA GLORIAS PATRIAS, LMR"}, {"id": 62334, "nombre": "RAFAEL ANTONIO TREJO ROMERO", "oportunidad": "Oportunidad de RAFAEL ANTONIO TREJO ROMERO", "modelo": "HONDA WR-V 1.5L A/T EXL 2026", "etapa": "Facturado Credito", "etapa_original": "Facturado Crédito", "estado": "FACTURADO", "entidades": ["PROVINCIAL"], "entidad_principal": "PROVINCIAL", "entidad_colores": {"PROVINCIAL": "#b45309"}, "fecha_aprobacion": "", "plazo": "", "monto_total": 0.0, "monto_aprobado": 0.0, "asesor": "ROSMILA VALLADARES", "telefono": "", "email": "rafaeltrejo07@gmail.com", "bancos": "", "ci_rif": "", "notas": "", "tags_extra": "OFICINA AV. URDANETA, LMR, LMCN"}, {"id": 62333, "nombre": "RAMON BENITO VALBUENA RONDON", "oportunidad": "Oportunidad de RAMON BENITO VALBUENA RONDON", "modelo": "", "etapa": "Facturado Credito", "etapa_original": "Facturado Crédito", "estado": "FACTURADO", "entidades": ["ARCA"], "entidad_principal": "ARCA", "entidad_colores": {"ARCA": "#213C83"}, "fecha_aprobacion": "2026-07-29", "plazo": "36", "monto_total": 38937.52, "monto_aprobado": 27256.26, "asesor": "ROSMILA VALLADARES", "telefono": "", "email": "rbvr9@gmail.com", "bancos": "", "ci_rif": "", "notas": "Financiamiento liquidado el 05/08/2026 25.620,89 con descuento del 6% de comisión flat", "tags_extra": "ANTICIPO"}, {"id": 62330, "nombre": "DALIA MARIA SANCHEZ DE SULBARAN", "oportunidad": "Oportunidad de DALIA MARIA SANCHEZ DE SULBARAN", "modelo": "", "etapa": "Facturado Credito", "etapa_original": "Facturado Crédito", "estado": "FACTURADO", "entidades": ["PROVINCIAL"], "entidad_principal": "PROVINCIAL", "entidad_colores": {"PROVINCIAL": "#b45309"}, "fecha_aprobacion": "", "plazo": "", "monto_total": 0.0, "monto_aprobado": 0.0, "asesor": "ROSMILA VALLADARES", "telefono": "", "email": "", "bancos": "", "ci_rif": "", "notas": "", "tags_extra": "ANTICIPO, OFICINA GLORIAS PATRIAS"}, {"id": 61908, "nombre": "FERNANDO JOSE VERA USECHE", "oportunidad": "Oportunidad de FERNANDO JOSE VERA USECHE", "modelo": "", "etapa": "Facturado Credito", "etapa_original": "Facturado Crédito", "estado": "FACTURADO", "entidades": ["PIVCA"], "entidad_principal": "PIVCA", "entidad_colores": {"PIVCA": "#7c3aed"}, "fecha_aprobacion": "2026-07-02", "plazo": "12", "monto_total": 38937.52, "monto_aprobado": 19184.5, "asesor": "ROSMILA VALLADARES", "telefono": "", "email": "Fernandov19@gmail.com", "bancos": "", "ci_rif": "", "notas": "Pendiente por firma del documento por parte del cliente", "tags_extra": "LMR, LMEC, VEHICULO ENTREGADO"}, {"id": 61871, "nombre": "ROBERTO CRALOS DIAZ MORANTES", "oportunidad": "Oportunidad de ROBERTO CARLOS DIAZ MORANTES", "modelo": "", "etapa": "Facturado Credito", "etapa_original": "Facturado Crédito", "estado": "FACTURADO", "entidades": ["ARCA"], "entidad_principal": "ARCA", "entidad_colores": {"ARCA": "#213C83"}, "fecha_aprobacion": "", "plazo": "", "monto_total": 0.0, "monto_aprobado": 0.0, "asesor": "ROSMILA VALLADARES", "telefono": "", "email": "robertodiazmorantes@gmail.com", "bancos": "", "ci_rif": "", "notas": "", "tags_extra": "ANTICIPO"}, {"id": 61800, "nombre": "ALBA SALAS", "oportunidad": "Oportunidad de ALBA SALAS", "modelo": "HONDA WR-V 1.5L A/T EXL 2026", "etapa": "Gestion de Credito", "etapa_original": "Gestión de Crédito", "estado": "GESTION", "entidades": ["PROVINCIAL"], "entidad_principal": "PROVINCIAL", "entidad_colores": {"PROVINCIAL": "#b45309"}, "fecha_aprobacion": "", "plazo": "", "monto_total": 38937.52, "monto_aprobado": 0.0, "asesor": "ROSMILA VALLADARES", "telefono": "", "email": "", "bancos": "", "ci_rif": "", "notas": "En evaluación por parte de la entidad financiera", "tags_extra": "ANTICIPO"}, {"id": 61591, "nombre": "GREGORY ARAQUE", "oportunidad": "Oportunidad de GREGORY ARAQUE", "modelo": "", "etapa": "Facturado Credito", "etapa_original": "Facturado Crédito", "estado": "FACTURADO", "entidades": ["ARCA"], "entidad_principal": "ARCA", "entidad_colores": {"ARCA": "#213C83"}, "fecha_aprobacion": "2026-07-15", "plazo": "24", "monto_total": 34158.32, "monto_aprobado": 17079.16, "asesor": "ANGEL DAVID PUENTES", "telefono": "", "email": "gregory_araque_97@hotmail.com", "bancos": "", "ci_rif": "", "notas": "Financiamiento liquidado 11/08/2026 monto  16.225,50 con descuento del 5% de comisión flat", "tags_extra": "ANTICIPO"}, {"id": 61577, "nombre": "CARMEN ALICIA GUTIERREZ DE BRIZUELA", "oportunidad": "Oportunidad de CARMEN ALICIA GUTIERREZ DE BRIZUELA", "modelo": "", "etapa": "Gestion de Credito", "etapa_original": "Gestión de Crédito", "estado": "GESTION", "entidades": ["ARCA"], "entidad_principal": "ARCA", "entidad_colores": {"ARCA": "#213C83"}, "fecha_aprobacion": "", "plazo": "", "monto_total": 0.0, "monto_aprobado": 0.0, "asesor": "ROSMILA VALLADARES", "telefono": "", "email": "aliciagutierrezserrano@hotmail.com", "bancos": "", "ci_rif": 11955523, "notas": "", "tags_extra": ""}, {"id": 61575, "nombre": "LUIS MIGUEL ANGULO ARELLANO", "oportunidad": "Oportunidad de LUIS MIGUEL ANGULO ARELLANO", "modelo": "", "etapa": "Facturado Credito", "etapa_original": "Facturado Crédito", "estado": "FACTURADO", "entidades": ["PIVCA"], "entidad_principal": "PIVCA", "entidad_colores": {"PIVCA": "#7c3aed"}, "fecha_aprobacion": "2026-06-05", "plazo": "24", "monto_total": 43358.28, "monto_aprobado": 17343.31, "asesor": "ROSMILA VALLADARES", "telefono": "", "email": "luismiguelanguloarellano@gmail.com", "bancos": "", "ci_rif": "", "notas": "Pendiente por liquidación por parte de la financiera", "tags_extra": "LMCN, VEHICULO ENTREGADO"}, {"id": 61551, "nombre": "MARIA ANDREINA MORENO SALAZAR", "oportunidad": "Oportunidad de MARIA ANDREINA MORENO SALAZAR", "modelo": "", "etapa": "Facturado Credito", "etapa_original": "Facturado Crédito", "estado": "FACTURADO", "entidades": ["PIVCA"], "entidad_principal": "PIVCA", "entidad_colores": {"PIVCA": "#7c3aed"}, "fecha_aprobacion": "2026-05-29", "plazo": "36", "monto_total": 34158.32, "monto_aprobado": 17079.16, "asesor": "ROSMILA VALLADARES", "telefono": "", "email": "andreina899m@gmail.com", "bancos": "", "ci_rif": 16199070, "notas": "Pendiente por liquidación por parte de la financiera.", "tags_extra": "LMCN, VEHICULO ENTREGADO"}, {"id": 61546, "nombre": "NORELIS COLMENARES GALAVIZ", "oportunidad": "Oportunidad de NORELIS COLMENARES GALAVIZ", "modelo": "HONDA HR-V 1.5L A/T EXL 2026", "etapa": "Facturado Credito", "etapa_original": "Facturado Crédito", "estado": "FACTURADO", "entidades": ["PIVCA"], "entidad_principal": "PIVCA", "entidad_colores": {"PIVCA": "#7c3aed"}, "fecha_aprobacion": "2026-06-04", "plazo": "24", "monto_total": 42105.56, "monto_aprobado": 16842.22, "asesor": "ROSMILA VALLADARES", "telefono": "", "email": "nore11colmenares@gmail.ccom", "bancos": "", "ci_rif": 11502014, "notas": "Pendiente por liquidación por parte de la financiera", "tags_extra": "LMR"}, {"id": 61545, "nombre": "CARLA ANDREINA PEÑALOZA QUEVEDO", "oportunidad": "Oportunidad de CARLA ANDREINA PEÑALOZA QUEVEDO", "modelo": "", "etapa": "Facturado Credito", "etapa_original": "Facturado Crédito", "estado": "FACTURADO", "entidades": ["PIVCA"], "entidad_principal": "PIVCA", "entidad_colores": {"PIVCA": "#7c3aed"}, "fecha_aprobacion": "2026-06-15", "plazo": "36", "monto_total": 38937.52, "monto_aprobado": 19468.76, "asesor": "ROSMILA VALLADARES", "telefono": "", "email": "carla1600@gmail.com", "bancos": "", "ci_rif": 20014236, "notas": "Pendiente por liquidación por parte de la financiera", "tags_extra": "LMCN, VEHICULO ENTREGADO"}];
+const ENTIDADES = ['ARCA','PIVCA','BANESCO','PROVINCIAL'];
+const COLOR_ENT = { 'ARCA':'#213C83', 'PIVCA':'#7c3aed', 'BANESCO':'#0a7d2c', 'PROVINCIAL':'#b45309' };
+
+let fEnt = 'ALL', fEstado = 'ALL', fBuscar = '';
+let chartEnt, chartDonut, chartEstado, chartMontos;
+
+function fmtMoney(v) {
+  return '$' + Number(v||0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function filtrado() {
+  const q = fBuscar.toLowerCase();
+  return DATA.filter(d => {
+    if (fEnt !== 'ALL' && d.entidad_principal !== fEnt) return false;
+    if (fEstado !== 'ALL' && d.estado !== fEstado) return false;
+    if (q) {
+      const hay = [d.nombre, d.modelo, d.oportunidad, d.asesor, d.etapa, (d.entidades||[]).join(' ')]
+        .join(' ').toLowerCase().includes(q);
+      if (!hay) return false;
+    }
+    return true;
+  });
+}
+
+function renderKpis() {
+  const all = filtrado();
+  const entCounts = {};
+  ENTIDADES.forEach(e => entCounts[e] = 0);
+  all.forEach(d => entCounts[d.entidad_principal]++);
+  // ordenar ARCA, PIVCA, BANESCO, PROVINCIAL
+  let kpiHtml = '';
+  const totalMonto = all.reduce((s,d)=>s+(d.monto_total||0),0);
+  const totalAprob = all.reduce((s,d)=>s+(d.monto_aprobado||0),0);
+  const aprobadosCount = all.filter(d => d.estado === 'APROBADO' || d.estado === 'FACTURADO').length;
+  kpiHtml += `<div class="kpi"><div class="bar" style="background:#213C83"></div><b>${all.length}</b><span>Clientes filtrados</span><small>Suma monto total: ${fmtMoney(totalMonto)}</small><small>Suma aprobado: ${fmtMoney(totalAprob)}</small></div>`;
+  kpiHtml += `<div class="kpi"><div class="bar" style="background:#0a7d2c"></div><b>${aprobadosCount}</b><span>Clientes Aprobados/Facturados</span><small>Suma monto aprobado: ${fmtMoney(totalAprob)}</small><small>Promedio por cliente: ${fmtMoney(aprobadosCount ? totalAprob/aprobadosCount : 0)}</small></div>`;
+  ENTIDADES.forEach(e => {
+    kpiHtml += `<div class="kpi"><div class="bar" style="background:${COLOR_ENT[e]}"></div><b>${entCounts[e]}</b><span>${e}</span></div>`;
+  });
+  document.getElementById('kpis').innerHTML = kpiHtml;
+}
+
+function renderCharts() {
+  const all = filtrado();
+  const entCounts = {};
+  ENTIDADES.forEach(e => entCounts[e] = 0);
+  all.forEach(d => entCounts[d.entidad_principal]++);
+
+  const labels = ENTIDADES;
+  const vals = ENTIDADES.map(e => entCounts[e] || 0);
+  const colors = ENTIDADES.map(e => COLOR_ENT[e]);
+
+  if (chartEnt) chartEnt.destroy();
+  chartEnt = new Chart(document.getElementById('chartEntidades'), {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'Clientes', data: vals, backgroundColor: colors, borderRadius: 8 }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+  });
+
+  if (chartDonut) chartDonut.destroy();
+  chartDonut = new Chart(document.getElementById('chartDonut'), {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data: vals, backgroundColor: colors, borderWidth: 3, borderColor: '#fff' }] },
+    options: { plugins: { legend: { position: 'bottom' } } }
+  });
+
+  // Montos aprobados por entidad
+  const montosAprob = {};
+  ENTIDADES.forEach(e => montosAprob[e] = 0);
+  all.forEach(d => montosAprob[d.entidad_principal] += (d.monto_aprobado || 0));
+  if (chartMontos) chartMontos.destroy();
+  chartMontos = new Chart(document.getElementById('chartMontos'), {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'Monto aprobado (USD)', data: ENTIDADES.map(e => Math.round(montosAprob[e])), backgroundColor: colors, borderRadius: 8 }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: (v) => '$' + Number(v).toLocaleString() } } } }
+  });
+
+  // Estado por entidad
+  const estadosPorEnt = {};
+  all.forEach(d => {
+    const e = d.entidad_principal;
+    if (!estadosPorEnt[e]) estadosPorEnt[e] = { FACTURADO:0, APROBADO:0, GESTION:0, OTROS:0 };
+    estadosPorEnt[e][d.estado]++;
+  });
+  const dF = labels.map(e => (estadosPorEnt[e]||{}).FACTURADO||0);
+  const dA = labels.map(e => (estadosPorEnt[e]||{}).APROBADO||0);
+  const dG = labels.map(e => (estadosPorEnt[e]||{}).GESTION||0);
+  const dO = labels.map(e => (estadosPorEnt[e]||{}).OTROS||0);
+  if (chartEstado) chartEstado.destroy();
+  chartEstado = new Chart(document.getElementById('chartEstado'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Facturados', data: dF, backgroundColor: '#0a7d2c' },
+        { label: 'Aprobados', data: dA, backgroundColor: '#7c3aed' },
+        { label: 'En Gestión', data: dG, backgroundColor: '#d9b300' },
+        { label: 'Otros', data: dO, backgroundColor: '#9ca3af' },
+      ]
+    },
+    options: { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } } }
+  });
+}
+
+function renderTabla() {
+  const rows = filtrado();
+  const tb = document.getElementById('tabla');
+  document.getElementById('countLine').textContent = `Mostrando ${rows.length} de ${DATA.length} clientes con etiqueta financiera.`;
+  if (rows.length === 0) {
+    tb.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#999;">Sin resultados</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(d => {
+    const pils = d.entidades.map(e => `<span class="tag-pill" style="background:${COLOR_ENT[e]}">${e}</span>`).join('');
+    const notas = d.notas ? `<div style="max-width:320px;max-height:110px;overflow:auto;font-size:11.5px;color:#555;background:#fbfcff;border:1px solid #eef1f8;border-radius:6px;padding:5px 8px;">${d.notas.replace(/\n/g,'<br>')}</div>` : '<span style="color:#bdbdbd;">—</span>';
+    return `<tr>
+      <td>${pils}</td>
+      <td><strong>${d.nombre}</strong><div style="color:#888;font-size:11px;">${d.email || ''}</div><div style="color:#888;font-size:11px;">${d.telefono || ''}</div></td>
+      <td><div>${d.oportunidad || ''}</div>${d.modelo ? '<div style="color:#0a7d2c;font-weight:600;font-size:12px;">🚗 '+d.modelo+'</div>':''}</td>
+      <td>${d.etapa_original || ''}</td>
+      <td><span class="estado est ${d.estado}">${d.estado}</span></td>
+      <td class="num">${fmtMoney(d.monto_total)}</td>
+      <td class="num"><strong>${fmtMoney(d.monto_aprobado)}</strong></td>
+      <td>${d.plazo || ''}</td>
+      <td>${d.fecha_aprobacion || ''}</td>
+      <td>${d.asesor || ''}</td>
+      <td>${notas}</td>
+    </tr>`;
+  }).join('');
+}
+
+function aplicarFiltro() {
+  renderKpis(); renderCharts(); renderTabla();
+}
+
+// Eventos
+document.querySelectorAll('.chip.ent').forEach(ch => {
+  ch.addEventListener('click', () => {
+    document.querySelectorAll('.chip.ent').forEach(x => x.classList.remove('active'));
+    ch.classList.add('active');
+    fEnt = ch.getAttribute('data-ent');
+    aplicarFiltro();
+  });
+});
+document.getElementById('fEstado').addEventListener('change', e => {
+  fEstado = e.target.value; aplicarFiltro();
+});
+document.getElementById('fBuscar').addEventListener('input', e => {
+  fBuscar = e.target.value; aplicarFiltro();
+});
+
+// Exportar CSV filtrado
+document.getElementById('fmtCsv').addEventListener('click', () => {
+  const rows = filtrado();
+  const enc = s => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
+  const cols = ['Entidad','Cliente','Oportunidad','Modelo','Etapa','Estado','MontoTotal','MontoAprobado','Plazo','FechaAprobacion','Asesor','Email','Telefono','Notas'];
+  let csv = cols.join(',') + '\n';
+  rows.forEach(d => {
+    csv += [d.entidades.join(' '), d.nombre, d.oportunidad, d.modelo, d.etapa_original, d.estado,
+      d.monto_total, d.monto_aprobado, d.plazo, d.fecha_aprobacion, d.asesor, d.email, d.telefono, d.notas]
+      .map(enc).join(',') + '\n';
+  });
+  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'clientes_financiamiento.csv';
+  a.click();
+});
+
+aplicarFiltro();
+</script>
+</body>
+</html>
