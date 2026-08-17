@@ -155,6 +155,43 @@ def main():
         norm = sname.replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u")
         stage_by_id_clean[sid] = norm
 
+    # ---- HISTORICO: todas las solicitudes del CRM (sin filtrar por etiqueta) ----
+    all_ids = call_kw("crm.lead", "search", [[]])
+    hist_fields = ["id", "create_date", "date_open", "stage_id", "tag_ids"]
+    all_leads = []
+    for i in range(0, len(all_ids), 200):
+        batch = all_ids[i:i + 200]
+        all_leads.extend(call_kw("crm.lead", "read", [batch, hist_fields]))
+    hist_data = []
+    for l in all_leads:
+        sid = l["stage_id"][0] if isinstance(l.get("stage_id"), (list, tuple)) else None
+        etapa = stage_by_id_clean.get(sid, "")
+        estado = "OTROS"
+        for k, v in STAGE_STATUS.items():
+            if etapa == k:
+                estado = v
+                break
+        if "facturado" in etapa.lower():
+            estado = "FACTURADO"
+        elif "aprobado" in etapa.lower():
+            estado = "APROBADO"
+        lid_tags2 = l.get("tag_ids") or []
+        tids2 = [x[0] if isinstance(x, (list, tuple)) else x for x in lid_tags2]
+        entidades_hist = []
+        for label, tag_name, color in FIN_TAGS_PRIORITY:
+            tid = next((t["id"] for t in tags if t["name"].strip().upper() == tag_name.strip().upper()), None)
+            if tid and tid in tids2:
+                entidades_hist.append(label)
+        hist_data.append({
+            "id": l["id"],
+            "create": (l.get("create_date") or "")[:10],
+            "open": (l.get("date_open") or "")[:10],
+            "mes": (l.get("create_date") or "")[:7],
+            "etapa": etapa,
+            "estado": estado,
+            "entidades": entidades_hist,
+        })
+
     data = []
     for l in leads:
         lid_tags = l.get("tag_ids") or []
@@ -235,6 +272,7 @@ def main():
     # ---- Build HTML ----
     now = datetime.now().strftime("%d/%m/%Y %H:%M")
     json_data = json.dumps(data, ensure_ascii=False)
+    json_hist = json.dumps(hist_data, ensure_ascii=False)
 
     html_doc = f"""<!DOCTYPE html>
 <html lang="es">
@@ -318,6 +356,17 @@ def main():
   </div>
 
   <div class="card full">
+    <h3>📈 Histórico de Solicitudes</h3>
+    <div class="filters" style="margin-top:4px;">
+      <span class="chip hist-chip active" data-vista="solicitadas">Solicitadas</span>
+      <span class="chip hist-chip" data-vista="nuevas">Nuevas (mes actual)</span>
+      <span class="chip hist-chip" data-vista="procesadas">Procesadas</span>
+    </div>
+    <div class="chart-box" style="height:320px;"><canvas id="chartHist"></canvas></div>
+    <div class="count-line" id="histCountLine" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="card full">
     <h3>👥 Relación de Clientes</h3>
     <div class="filters">
       <span class="chip ent active" data-ent="ALL" style="border-color:#213C83;">Todas</span>
@@ -352,11 +401,13 @@ def main():
 
 <script>
 const DATA = {json_data};
+const HIST = {json_hist};
 const ENTIDADES = ['ARCA','PIVCA','BANESCO','PROVINCIAL'];
 const COLOR_ENT = {{ 'ARCA':'#213C83', 'PIVCA':'#7c3aed', 'BANESCO':'#0a7d2c', 'PROVINCIAL':'#b45309' }};
 
 let fEnt = 'ALL', fEstado = 'ALL', fBuscar = '';
-let chartEnt, chartDonut, chartEstado, chartMontos;
+let chartEnt, chartDonut, chartEstado, chartMontos, chartHist;
+let histVista = 'solicitadas';
 
 function fmtMoney(v) {{
   return '$' + Number(v||0).toLocaleString('en-US', {{minimumFractionDigits:2, maximumFractionDigits:2}});
@@ -456,6 +507,72 @@ function renderCharts() {{
   }});
 }}
 
+// ---- HISTORICO ----
+function renderHist() {{
+  // Agrupar por mes (create_date)
+  const porMes = {{}};
+  HIST.forEach(h => {{
+    if (!h.mes) return;
+    if (!porMes[h.mes]) porMes[h.mes] = {{ total: 0, facturado: 0, aprobado: 0, gestion: 0, otros: 0 }};
+    const m = porMes[h.mes];
+    m.total++;
+    if (h.estado === 'FACTURADO') m.facturado++;
+    else if (h.estado === 'APROBADO') m.aprobado++;
+    else if (h.estado === 'GESTION') m.gestion++;
+    else m.otros++;
+  }});
+  const meses = Object.keys(porMes).sort();
+  const labels = meses.map(m => {{
+    const [y, mo] = m.split('-');
+    const nombres = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    return nombres[parseInt(mo,10)-1] + ' ' + y;
+  }});
+  const dTotal = meses.map(m => porMes[m].total);
+  const dNuevas = meses.map(m => (m === getCurrentMonth() ? porMes[m].total : 0));
+  const dProcesado = meses.map(m => porMes[m].facturado + porMes[m].aprobado);
+  const dFact = meses.map(m => porMes[m].facturado);
+  const dAprob = meses.map(m => porMes[m].aprobado);
+  const dGestion = meses.map(m => porMes[m].gestion);
+
+  const datasets = {{
+    solicitadas: [{{ label: 'Solicitadas', data: dTotal, backgroundColor: '#213C83', borderRadius: 6 }}],
+    nuevas: [{{ label: 'Nuevas (mes actual)', data: dNuevas, backgroundColor: '#e11d48', borderRadius: 6 }}],
+    procesadas: [
+      {{ label: 'Facturadas', data: dFact, backgroundColor: '#0a7d2c' }},
+      {{ label: 'Aprobadas', data: dAprob, backgroundColor: '#7c3aed' }},
+      {{ label: 'En Gestión', data: dGestion, backgroundColor: '#d9b300' }},
+      {{ label: 'Otros', data: meses.map(m => porMes[m].otros), backgroundColor: '#9ca3af' }},
+    ]
+  }};
+
+  if (chartHist) chartHist.destroy();
+  chartHist = new Chart(document.getElementById('chartHist'), {{
+    type: 'bar',
+    data: {{ labels, datasets: datasets[histVista] }},
+    options: {{
+      plugins: {{
+        legend: {{ position: 'bottom' }},
+        tooltip: {{ callbacks: {{ label: (ctx) => ctx.dataset.label + ': ' + ctx.parsed.y + ' solicitudes' }} }}
+      }},
+      scales: {{ y: {{ beginAtZero: true, ticks: {{ precision: 0 }} }} }}
+    }}
+  }});
+
+  const totalSolic = HIST.length;
+  const totalFact = HIST.filter(h => h.estado === 'FACTURADO').length;
+  const totalAprob = HIST.filter(h => h.estado === 'APROBADO').length;
+  const totalGestion = HIST.filter(h => h.estado === 'GESTION').length;
+  const mesActual = getCurrentMonth();
+  const nuevasMes = totalSolic ? (porMes[mesActual] ? porMes[mesActual].total : 0) : 0;
+  document.getElementById('histCountLine').textContent =
+    `📌 Histórico total: ${{totalSolic}} solicitudes · Nuevas en el mes actual: ${{nuevasMes}} · Procesadas (aprobadas+facturadas): ${{totalAprob + totalFact}} · Facturadas: ${{totalFact}} · Aprobadas: ${{totalAprob}} · En gestión: ${{totalGestion}}`;
+}}
+
+function getCurrentMonth() {{
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+}}
+
 function renderTabla() {{
   const rows = filtrado();
   const tb = document.getElementById('tabla');
@@ -484,7 +601,7 @@ function renderTabla() {{
 }}
 
 function aplicarFiltro() {{
-  renderKpis(); renderCharts(); renderTabla();
+  renderKpis(); renderCharts(); renderHist(); renderTabla();
 }}
 
 // Eventos
@@ -494,6 +611,14 @@ document.querySelectorAll('.chip.ent').forEach(ch => {{
     ch.classList.add('active');
     fEnt = ch.getAttribute('data-ent');
     aplicarFiltro();
+  }});
+}});
+document.querySelectorAll('.chip.hist-chip').forEach(ch => {{
+  ch.addEventListener('click', () => {{
+    document.querySelectorAll('.chip.hist-chip').forEach(x => x.classList.remove('active'));
+    ch.classList.add('active');
+    histVista = ch.getAttribute('data-vista');
+    renderHist();
   }});
 }});
 document.getElementById('fEstado').addEventListener('change', e => {{
