@@ -127,7 +127,7 @@
     </div>
   </div>
 
-  <div class="foot">Consulta solo-lectura al CRM de Odoo · latinbienmotors.com · Generado el 20/08/2026 22:03</div>
+  <div class="foot">Consulta solo-lectura al CRM de Odoo · latinbienmotors.com · Generado el 20/08/2026 22:16</div>
 </div>
 
 <script>
@@ -371,6 +371,11 @@ function renderHist() {
     `📌 Solicitudes: ${totalSolic} total · ${nuevasMes} este mes · ${totalAprob + totalFact} procesadas · ${totalFact} facturadas · ${totalAprob} aprobadas · ${totalGestion} en gestión | ` +
     `💰 Montos: Solicitado total $${totalMontoSol.toLocaleString('es-VE')} · Aprobado total $${totalMontoApr.toLocaleString('es-VE')} · ` +
     `Este mes: Solicitado $${montoSolMes.toLocaleString('es-VE')} · Aprobado $${montoAprMes.toLocaleString('es-VE')}`;
+}
+
+function getCurrentMonth() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
 }
 
 // Toggle orden ascendente/descendente

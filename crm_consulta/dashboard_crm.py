@@ -656,6 +656,11 @@ function renderHist() {{
     `Este mes: Solicitado $${{montoSolMes.toLocaleString('es-VE')}} · Aprobado $${{montoAprMes.toLocaleString('es-VE')}}`;
 }}
 
+function getCurrentMonth() {{
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+}}
+
 // Toggle orden ascendente/descendente
 document.getElementById('btnHistOrder').addEventListener('click', () => {{
   histOrder = histOrder === 'asc' ? 'desc' : 'asc';
