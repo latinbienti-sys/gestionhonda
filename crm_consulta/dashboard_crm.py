@@ -157,7 +157,7 @@ def main():
 
     # ---- HISTORICO: todas las solicitudes del CRM (sin filtrar por etiqueta) ----
     all_ids = call_kw("crm.lead", "search", [[]])
-    hist_fields = ["id", "create_date", "date_open", "stage_id", "tag_ids"]
+    hist_fields = ["id", "create_date", "date_open", "stage_id", "tag_ids", "x_montototal", "x_monto_aprobado", "x_plazo", "x_fecha_aprobacion"]
     all_leads = []
     for i in range(0, len(all_ids), 200):
         batch = all_ids[i:i + 200]
@@ -182,6 +182,9 @@ def main():
             tid = next((t["id"] for t in tags if t["name"].strip().upper() == tag_name.strip().upper()), None)
             if tid and tid in tids2:
                 entidades_hist.append(label)
+        # Montos (pueden venir como False/None -> 0)
+        montot = l.get("x_montototal") or 0
+        montoap = l.get("x_monto_aprobado") or 0
         hist_data.append({
             "id": l["id"],
             "create": (l.get("create_date") or "")[:10],
@@ -190,6 +193,10 @@ def main():
             "etapa": etapa,
             "estado": estado,
             "entidades": entidades_hist,
+            "montototal": float(montot),
+            "montoaprobado": float(montoap),
+            "plazo": l.get("x_plazo") or "",
+            "fechaaprob": (l.get("x_fecha_aprobacion") or "")[:10],
         })
 
     data = []
@@ -361,6 +368,13 @@ def main():
       <span class="chip hist-chip active" data-vista="solicitadas">Solicitadas</span>
       <span class="chip hist-chip" data-vista="nuevas">Nuevas (mes actual)</span>
       <span class="chip hist-chip" data-vista="procesadas">Procesadas</span>
+      <span class="chip hist-chip" data-vista="montos">Montos (Sol. vs Aprob.)</span>
+      <span class="chip hist-chip" data-vista="tendencia">Tendencia</span>
+    </div>
+    <div class="filters" style="margin-top:4px;">
+      <button type="button" class="chip" id="btnHistOrder" title="Alternar orden ascendente/descendente">
+        Orden: <span id="histOrderLabel">Asc</span>
+      </button>
     </div>
     <div class="chart-box" style="height:320px;"><canvas id="chartHist"></canvas></div>
     <div class="count-line" id="histCountLine" style="margin-top:8px;"></div>
@@ -508,70 +522,146 @@ function renderCharts() {{
 }}
 
 // ---- HISTORICO ----
+let histOrder = 'asc'; // 'asc' o 'desc'
+
 function renderHist() {{
-  // Agrupar por mes (create_date)
+  // Agrupar por mes (create_date) - contadores y montos
   const porMes = {{}};
   HIST.forEach(h => {{
     if (!h.mes) return;
-    if (!porMes[h.mes]) porMes[h.mes] = {{ total: 0, facturado: 0, aprobado: 0, gestion: 0, otros: 0 }};
+    if (!porMes[h.mes]) porMes[h.mes] = {{ total: 0, facturado: 0, aprobado: 0, gestion: 0, otros: 0, montototal: 0, montoaprobado: 0 }};
     const m = porMes[h.mes];
     m.total++;
+    m.montototal += (h.montototal || 0);
+    m.montoaprobado += (h.montoaprobado || 0);
     if (h.estado === 'FACTURADO') m.facturado++;
     else if (h.estado === 'APROBADO') m.aprobado++;
     else if (h.estado === 'GESTION') m.gestion++;
     else m.otros++;
   }});
-  const meses = Object.keys(porMes).sort();
+  
+  // Orden de meses según toggle
+  let meses = Object.keys(porMes);
+  meses.sort((a, b) => histOrder === 'asc' ? a.localeCompare(b) : b.localeCompare(a));
+  
+  const nombresMes = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   const labels = meses.map(m => {{
     const [y, mo] = m.split('-');
-    const nombres = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-    return nombres[parseInt(mo,10)-1] + ' ' + y;
+    return nombresMes[parseInt(mo,10)-1] + ' ' + y;
   }});
+  
   const dTotal = meses.map(m => porMes[m].total);
   const dNuevas = meses.map(m => (m === getCurrentMonth() ? porMes[m].total : 0));
-  const dProcesado = meses.map(m => porMes[m].facturado + porMes[m].aprobado);
   const dFact = meses.map(m => porMes[m].facturado);
   const dAprob = meses.map(m => porMes[m].aprobado);
   const dGestion = meses.map(m => porMes[m].gestion);
-
-  const datasets = {{
-    solicitadas: [{{ label: 'Solicitadas', data: dTotal, backgroundColor: '#213C83', borderRadius: 6 }}],
-    nuevas: [{{ label: 'Nuevas (mes actual)', data: dNuevas, backgroundColor: '#e11d48', borderRadius: 6 }}],
-    procesadas: [
-      {{ label: 'Facturadas', data: dFact, backgroundColor: '#0a7d2c' }},
-      {{ label: 'Aprobadas', data: dAprob, backgroundColor: '#7c3aed' }},
-      {{ label: 'En Gestión', data: dGestion, backgroundColor: '#d9b300' }},
-      {{ label: 'Otros', data: meses.map(m => porMes[m].otros), backgroundColor: '#9ca3af' }},
-    ]
-  }};
-
+  const dOtros = meses.map(m => porMes[m].otros);
+  const dMontoSol = meses.map(m => porMes[m].montototal);
+  const dMontoApr = meses.map(m => porMes[m].montoaprobado);
+  
+  let chartType = 'bar';
+  let chartData;
+  let yTickCallback = (val) => val;
+  let yBeginAtZero = true;
+  
+  if (histVista === 'montos') {{
+    chartType = 'bar';
+    chartData = {{
+      labels,
+      datasets: [
+        {{ label: 'Monto Solicitado', data: dMontoSol, backgroundColor: '#213C83', borderRadius: 6 }},
+        {{ label: 'Monto Aprobado', data: dMontoApr, backgroundColor: '#0a7d2c', borderRadius: 6 }}
+      ]
+    }};
+    yTickCallback = (val) => '$' + val.toLocaleString('es-VE', {{maximumFractionDigits: 0}});
+  }} else if (histVista === 'tendencia') {{
+    chartType = 'line';
+    chartData = {{
+      labels,
+      datasets: [
+        {{ label: 'Solicitadas', data: dTotal, borderColor: '#213C83', backgroundColor: 'rgba(33,60,131,0.1)', fill: true, tension: 0.3, pointRadius: 4 }},
+        {{ label: 'Aprobadas', data: dAprob, borderColor: '#0a7d2c', backgroundColor: 'rgba(10,125,44,0.1)', fill: true, tension: 0.3, pointRadius: 4 }},
+        {{ label: 'Facturadas', data: dFact, borderColor: '#7c3aed', backgroundColor: 'rgba(124,58,237,0.1)', fill: true, tension: 0.3, pointRadius: 4 }},
+      ]
+    }};
+    yBeginAtZero = true;
+  }} else {{
+    // Vistas de conteo existentes
+    chartData = {{
+      labels,
+      datasets: {{
+        solicitadas: [{{ label: 'Solicitadas', data: dTotal, backgroundColor: '#213C83', borderRadius: 6 }}],
+        nuevas: [{{ label: 'Nuevas (mes actual)', data: dNuevas, backgroundColor: '#e11d48', borderRadius: 6 }}],
+        procesadas: [
+          {{ label: 'Facturadas', data: dFact, backgroundColor: '#0a7d2c' }},
+          {{ label: 'Aprobadas', data: dAprob, backgroundColor: '#7c3aed' }},
+          {{ label: 'En Gestión', data: dGestion, backgroundColor: '#d9b300' }},
+          {{ label: 'Otros', data: dOtros, backgroundColor: '#9ca3af' }},
+        ]
+      }}[histVista]
+    }};
+    // stacked for procesadas
+    if (histVista === 'procesadas') {{
+      chartData.datasets.forEach(ds => ds.borderRadius = 6);
+    }}
+  }}
+  
   if (chartHist) chartHist.destroy();
+  
+  const isStacked = histVista === 'procesadas';
   chartHist = new Chart(document.getElementById('chartHist'), {{
-    type: 'bar',
-    data: {{ labels, datasets: datasets[histVista] }},
+    type: chartType,
+    data: chartData,
     options: {{
       plugins: {{
         legend: {{ position: 'bottom' }},
-        tooltip: {{ callbacks: {{ label: (ctx) => ctx.dataset.label + ': ' + ctx.parsed.y + ' solicitudes' }} }}
+        tooltip: {{
+          callbacks: {{
+            label: (ctx) => {{
+              if (histVista === 'montos') {{
+                return ctx.dataset.label + ': $' + ctx.parsed.y.toLocaleString('es-VE', {{maximumFractionDigits: 2}});
+              }}
+              return ctx.dataset.label + ': ' + ctx.parsed.y + (histVista === 'tendencia' ? ' solicitudes' : '');
+            }}
+          }}
+        }}
       }},
-      scales: {{ y: {{ beginAtZero: true, ticks: {{ precision: 0 }} }} }}
+      scales: {{
+        x: {{ stacked: isStacked }},
+        y: {{ 
+          beginAtZero: yBeginAtZero, 
+          stacked: isStacked, 
+          ticks: {{ precision: 0, callback: yTickCallback }} 
+        }}
+      }},
+      interaction: histVista === 'tendencia' ? {{ mode: 'index', intersect: false }} : undefined
     }}
   }});
-
+  
+  // Resumen financiero
   const totalSolic = HIST.length;
+  const totalMontoSol = HIST.reduce((s, h) => s + (h.montototal || 0), 0);
+  const totalMontoApr = HIST.reduce((s, h) => s + (h.montoaprobado || 0), 0);
   const totalFact = HIST.filter(h => h.estado === 'FACTURADO').length;
   const totalAprob = HIST.filter(h => h.estado === 'APROBADO').length;
   const totalGestion = HIST.filter(h => h.estado === 'GESTION').length;
   const mesActual = getCurrentMonth();
   const nuevasMes = totalSolic ? (porMes[mesActual] ? porMes[mesActual].total : 0) : 0;
+  const montoSolMes = totalSolic ? (porMes[mesActual] ? porMes[mesActual].montototal : 0) : 0;
+  const montoAprMes = totalSolic ? (porMes[mesActual] ? porMes[mesActual].montoaprobado : 0) : 0;
+  
   document.getElementById('histCountLine').textContent =
-    `📌 Histórico total: ${{totalSolic}} solicitudes · Nuevas en el mes actual: ${{nuevasMes}} · Procesadas (aprobadas+facturadas): ${{totalAprob + totalFact}} · Facturadas: ${{totalFact}} · Aprobadas: ${{totalAprob}} · En gestión: ${{totalGestion}}`;
+    `📌 Solicitudes: ${{totalSolic}} total · ${{nuevasMes}} este mes · ${{totalAprob + totalFact}} procesadas · ${{totalFact}} facturadas · ${{totalAprob}} aprobadas · ${{totalGestion}} en gestión | ` +
+    `💰 Montos: Solicitado total $${{totalMontoSol.toLocaleString('es-VE')}} · Aprobado total $${{totalMontoApr.toLocaleString('es-VE')}} · ` +
+    `Este mes: Solicitado $${{montoSolMes.toLocaleString('es-VE')}} · Aprobado $${{montoAprMes.toLocaleString('es-VE')}}`;
 }}
 
-function getCurrentMonth() {{
-  const d = new Date();
-  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
-}}
+// Toggle orden ascendente/descendente
+document.getElementById('btnHistOrder').addEventListener('click', () => {{
+  histOrder = histOrder === 'asc' ? 'desc' : 'asc';
+  document.getElementById('histOrderLabel').textContent = histOrder === 'asc' ? 'Asc' : 'Desc';
+  renderHist();
+}});
 
 function renderTabla() {{
   const rows = filtrado();
