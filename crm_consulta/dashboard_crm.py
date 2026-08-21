@@ -27,6 +27,14 @@ FIN_TAGS_PRIORITY = [
     ("PROVINCIAL", "CREDITO BANCO PROVINCIAL", "#b45309"),
 ]
 
+# Etiquetas de "LIQUIDADO" (credito totalmente pagado) por entidad
+LIQUID_TAGS = [
+    ("ARCA", "LIQUIDADO ARCA", "#213C83"),
+    ("PIVCA", "LIQUIDADO PIVCA", "#7c3aed"),
+    ("BANESCO", "LIQUIDADO BANESCO", "#0a7d2c"),
+    ("PROVINCIAL", "LIQUIDADO PROVINCIAL", "#b45309"),
+]
+
 STAGE_STATUS = {
     "Facturado Credito": "FACTURADO",
     "Facturado Contado": "FACTURADO",
@@ -106,9 +114,13 @@ def main():
     stages = call_kw("crm.stage", "search_read", [[]], {"fields": ["id", "name", "sequence"]})
     stage_by_id = {s["id"]: s["name"] for s in stages}
 
-    # Ids de etiquetas financieras
+    # Ids de etiquetas financieras (incluye las de "LIQUIDADO")
     fin_tag_ids = []
     for label, tag_name, color in FIN_TAGS_PRIORITY:
+        tid = next((t["id"] for t in tags if t["name"].strip().upper() == tag_name.strip().upper()), None)
+        if tid:
+            fin_tag_ids.append(tid)
+    for label, tag_name, color in LIQUID_TAGS:
         tid = next((t["id"] for t in tags if t["name"].strip().upper() == tag_name.strip().upper()), None)
         if tid:
             fin_tag_ids.append(tid)
@@ -178,10 +190,19 @@ def main():
         lid_tags2 = l.get("tag_ids") or []
         tids2 = [x[0] if isinstance(x, (list, tuple)) else x for x in lid_tags2]
         entidades_hist = []
+        liquidado_hist = False
         for label, tag_name, color in FIN_TAGS_PRIORITY:
             tid = next((t["id"] for t in tags if t["name"].strip().upper() == tag_name.strip().upper()), None)
             if tid and tid in tids2:
                 entidades_hist.append(label)
+        for label, tag_name, color in LIQUID_TAGS:
+            tid = next((t["id"] for t in tags if t["name"].strip().upper() == tag_name.strip().upper()), None)
+            if tid and tid in tids2:
+                liquidado_hist = True
+                if label not in entidades_hist:
+                    entidades_hist.append(label)
+        if liquidado_hist:
+            estado = "LIQUIDADO"
         # Montos (pueden venir como False/None -> 0)
         montot = l.get("x_montototal") or 0
         montoap = l.get("x_monto_aprobado") or 0
@@ -210,21 +231,33 @@ def main():
             tid = next((t["id"] for t in tags if t["name"].strip().upper() == tag_name.strip().upper()), None)
             if tid and tid in tids:
                 entidades.append({"label": label, "color": color, "tag": tag_name})
+
+        # Detectar etiquetas de "LIQUIDADO" (credito totalmente pagado)
+        liquidado = False
+        for label, tag_name, color in LIQUID_TAGS:
+            tid = next((t["id"] for t in tags if t["name"].strip().upper() == tag_name.strip().upper()), None)
+            if tid and tid in tids:
+                liquidado = True
+                if not any(e["label"] == label for e in entidades):
+                    entidades.append({"label": label, "color": color, "tag": tag_name})
         if not entidades:
             continue
 
-        # Etapa y estado (FACTURADO / APROBADO / GESTION)
+        # Etapa y estado (FACTURADO / APROBADO / GESTION / LIQUIDADO)
         sid = l["stage_id"][0] if isinstance(l.get("stage_id"), (list, tuple)) else None
         etapa = stage_by_id_clean.get(sid, "")
-        estado = "OTROS"
-        for k, v in STAGE_STATUS.items():
-            if etapa == k:
-                estado = v
-                break
-        if "facturado" in etapa.lower():
-            estado = "FACTURADO"
-        elif "aprobado" in etapa.lower():
-            estado = "APROBADO"
+        if liquidado:
+            estado = "LIQUIDADO"
+        else:
+            estado = "OTROS"
+            for k, v in STAGE_STATUS.items():
+                if etapa == k:
+                    estado = v
+                    break
+            if "facturado" in etapa.lower():
+                estado = "FACTURADO"
+            elif "aprobado" in etapa.lower():
+                estado = "APROBADO"
 
         cliente = l["partner_id"][1] if isinstance(l.get("partner_id"), (list, tuple)) else (l.get("contact_name") or l.get("name") or "")
         if cliente.startswith("Oportunidad de "):
@@ -331,6 +364,7 @@ def main():
   .est.APROBADO {{ background:#ede9fe; color:#5b21b6; }}
   .est.GESTION {{ background:#fef9c3; color:#854d0e; }}
   .est.OTROS {{ background:#f3f4f6; color:#374151; }}
+  .est.LIQUIDADO {{ background:#cffafe; color:#0e7490; }}
   .foot {{ text-align:center; color:#999; font-size:12px; padding:18px; }}
   .count-line {{ font-size:13px; color:#666; margin-bottom:8px; }}
 </style>
@@ -357,7 +391,7 @@ def main():
       <div class="chart-box"><canvas id="chartMontos"></canvas></div>
     </div>
     <div class="card">
-      <h3>✔️ Estado del Proceso por Entidad (Facturado vs Aprobado vs En Gestión)</h3>
+      <h3>✔️ Estado del Proceso por Entidad (Facturado · Aprobado · En Gestión · Liquidado)</h3>
       <div class="chart-box"><canvas id="chartEstado"></canvas></div>
     </div>
   </div>
@@ -393,6 +427,7 @@ def main():
         <option value="FACTURADO">Facturados</option>
         <option value="APROBADO">Aprobados</option>
         <option value="GESTION">En Gestión / Crédito</option>
+        <option value="LIQUIDADO">Liquidados</option>
       </select>
       <input type="text" id="fBuscar" class="search" placeholder="🔍 Buscar por nombre, modelo, asesor...">
       <span class="chip" id="fmtCsv">⬇️ CSV</span>
@@ -450,9 +485,9 @@ function renderKpis() {{
   let kpiHtml = '';
   const totalMonto = all.reduce((s,d)=>s+(d.monto_total||0),0);
   const totalAprob = all.reduce((s,d)=>s+(d.monto_aprobado||0),0);
-  const aprobadosCount = all.filter(d => d.estado === 'APROBADO' || d.estado === 'FACTURADO').length;
+  const aprobadosCount = all.filter(d => ['APROBADO','FACTURADO','LIQUIDADO'].includes(d.estado)).length;
   kpiHtml += `<div class="kpi"><div class="bar" style="background:#213C83"></div><b>${{all.length}}</b><span>Clientes filtrados</span><small>Suma monto total: ${{fmtMoney(totalMonto)}}</small><small>Suma aprobado: ${{fmtMoney(totalAprob)}}</small></div>`;
-  kpiHtml += `<div class="kpi"><div class="bar" style="background:#0a7d2c"></div><b>${{aprobadosCount}}</b><span>Clientes Aprobados/Facturados</span><small>Suma monto aprobado: ${{fmtMoney(totalAprob)}}</small><small>Promedio por cliente: ${{fmtMoney(aprobadosCount ? totalAprob/aprobadosCount : 0)}}</small></div>`;
+  kpiHtml += `<div class="kpi"><div class="bar" style="background:#0a7d2c"></div><b>${{aprobadosCount}}</b><span>Clientes Aprobados/Facturados/Liquidados</span><small>Suma monto aprobado: ${{fmtMoney(totalAprob)}}</small><small>Promedio por cliente: ${{fmtMoney(aprobadosCount ? totalAprob/aprobadosCount : 0)}}</small></div>`;
   ENTIDADES.forEach(e => {{
     kpiHtml += `<div class="kpi"><div class="bar" style="background:${{COLOR_ENT[e]}}"></div><b>${{entCounts[e]}}</b><span>${{e}}</span></div>`;
   }});
@@ -498,13 +533,14 @@ function renderCharts() {{
   const estadosPorEnt = {{}};
   all.forEach(d => {{
     const e = d.entidad_principal;
-    if (!estadosPorEnt[e]) estadosPorEnt[e] = {{ FACTURADO:0, APROBADO:0, GESTION:0, OTROS:0 }};
+    if (!estadosPorEnt[e]) estadosPorEnt[e] = {{ FACTURADO:0, APROBADO:0, GESTION:0, OTROS:0, LIQUIDADO:0 }};
     estadosPorEnt[e][d.estado]++;
   }});
   const dF = labels.map(e => (estadosPorEnt[e]||{{}}).FACTURADO||0);
   const dA = labels.map(e => (estadosPorEnt[e]||{{}}).APROBADO||0);
   const dG = labels.map(e => (estadosPorEnt[e]||{{}}).GESTION||0);
   const dO = labels.map(e => (estadosPorEnt[e]||{{}}).OTROS||0);
+  const dL = labels.map(e => (estadosPorEnt[e]||{{}}).LIQUIDADO||0);
   if (chartEstado) chartEstado.destroy();
   chartEstado = new Chart(document.getElementById('chartEstado'), {{
     type: 'bar',
@@ -514,6 +550,7 @@ function renderCharts() {{
         {{ label: 'Facturados', data: dF, backgroundColor: '#0a7d2c' }},
         {{ label: 'Aprobados', data: dA, backgroundColor: '#7c3aed' }},
         {{ label: 'En Gestión', data: dG, backgroundColor: '#d9b300' }},
+        {{ label: 'Liquidados', data: dL, backgroundColor: '#0891b2' }},
         {{ label: 'Otros', data: dO, backgroundColor: '#9ca3af' }},
       ]
     }},
@@ -529,7 +566,7 @@ function renderHist() {{
   const porMes = {{}};
   HIST.forEach(h => {{
     if (!h.mes) return;
-    if (!porMes[h.mes]) porMes[h.mes] = {{ total: 0, facturado: 0, aprobado: 0, gestion: 0, otros: 0, montototal: 0, montoaprobado: 0 }};
+    if (!porMes[h.mes]) porMes[h.mes] = {{ total: 0, facturado: 0, aprobado: 0, gestion: 0, otros: 0, liquidado: 0, montototal: 0, montoaprobado: 0 }};
     const m = porMes[h.mes];
     m.total++;
     m.montototal += (h.montototal || 0);
@@ -537,6 +574,7 @@ function renderHist() {{
     if (h.estado === 'FACTURADO') m.facturado++;
     else if (h.estado === 'APROBADO') m.aprobado++;
     else if (h.estado === 'GESTION') m.gestion++;
+    else if (h.estado === 'LIQUIDADO') m.liquidado++;
     else m.otros++;
   }});
   
@@ -556,6 +594,7 @@ function renderHist() {{
   const dAprob = meses.map(m => porMes[m].aprobado);
   const dGestion = meses.map(m => porMes[m].gestion);
   const dOtros = meses.map(m => porMes[m].otros);
+  const dLiquid = meses.map(m => porMes[m].liquidado);
   const dMontoSol = meses.map(m => porMes[m].montototal);
   const dMontoApr = meses.map(m => porMes[m].montoaprobado);
   
@@ -582,6 +621,7 @@ function renderHist() {{
         {{ label: 'Solicitadas', data: dTotal, borderColor: '#213C83', backgroundColor: 'rgba(33,60,131,0.1)', fill: true, tension: 0.3, pointRadius: 4 }},
         {{ label: 'Aprobadas', data: dAprob, borderColor: '#0a7d2c', backgroundColor: 'rgba(10,125,44,0.1)', fill: true, tension: 0.3, pointRadius: 4 }},
         {{ label: 'Facturadas', data: dFact, borderColor: '#7c3aed', backgroundColor: 'rgba(124,58,237,0.1)', fill: true, tension: 0.3, pointRadius: 4 }},
+        {{ label: 'Liquidadas', data: dLiquid, borderColor: '#0891b2', backgroundColor: 'rgba(8,145,178,0.1)', fill: true, tension: 0.3, pointRadius: 4 }},
       ]
     }};
     yBeginAtZero = true;
@@ -596,6 +636,7 @@ function renderHist() {{
           {{ label: 'Facturadas', data: dFact, backgroundColor: '#0a7d2c' }},
           {{ label: 'Aprobadas', data: dAprob, backgroundColor: '#7c3aed' }},
           {{ label: 'En Gestión', data: dGestion, backgroundColor: '#d9b300' }},
+          {{ label: 'Liquidados', data: dLiquid, backgroundColor: '#0891b2' }},
           {{ label: 'Otros', data: dOtros, backgroundColor: '#9ca3af' }},
         ]
       }}[histVista]
@@ -645,13 +686,14 @@ function renderHist() {{
   const totalFact = HIST.filter(h => h.estado === 'FACTURADO').length;
   const totalAprob = HIST.filter(h => h.estado === 'APROBADO').length;
   const totalGestion = HIST.filter(h => h.estado === 'GESTION').length;
+  const totalLiquid = HIST.filter(h => h.estado === 'LIQUIDADO').length;
   const mesActual = getCurrentMonth();
   const nuevasMes = totalSolic ? (porMes[mesActual] ? porMes[mesActual].total : 0) : 0;
   const montoSolMes = totalSolic ? (porMes[mesActual] ? porMes[mesActual].montototal : 0) : 0;
   const montoAprMes = totalSolic ? (porMes[mesActual] ? porMes[mesActual].montoaprobado : 0) : 0;
   
   document.getElementById('histCountLine').textContent =
-    `📌 Solicitudes: ${{totalSolic}} total · ${{nuevasMes}} este mes · ${{totalAprob + totalFact}} procesadas · ${{totalFact}} facturadas · ${{totalAprob}} aprobadas · ${{totalGestion}} en gestión | ` +
+    `📌 Solicitudes: ${{totalSolic}} total · ${{nuevasMes}} este mes · ${{totalAprob + totalFact + totalLiquid}} procesadas · ${{totalFact}} facturadas · ${{totalAprob}} aprobadas · ${{totalLiquid}} liquidadas · ${{totalGestion}} en gestión | ` +
     `💰 Montos: Solicitado total $${{totalMontoSol.toLocaleString('es-VE')}} · Aprobado total $${{totalMontoApr.toLocaleString('es-VE')}} · ` +
     `Este mes: Solicitado $${{montoSolMes.toLocaleString('es-VE')}} · Aprobado $${{montoAprMes.toLocaleString('es-VE')}}`;
 }}
