@@ -201,7 +201,7 @@ def main():
                 liquidado_hist = True
                 if label not in entidades_hist:
                     entidades_hist.append(label)
-        if liquidado_hist:
+        if liquidado_hist or "liquid" in etapa.lower():
             estado = "LIQUIDADO"
         # Montos (pueden venir como False/None -> 0)
         montot = l.get("x_montototal") or 0
@@ -246,7 +246,7 @@ def main():
         # Etapa y estado (FACTURADO / APROBADO / GESTION / LIQUIDADO)
         sid = l["stage_id"][0] if isinstance(l.get("stage_id"), (list, tuple)) else None
         etapa = stage_by_id_clean.get(sid, "")
-        if liquidado:
+        if liquidado or "liquid" in etapa.lower():
             estado = "LIQUIDADO"
         else:
             estado = "OTROS"
