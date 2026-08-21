@@ -27,12 +27,12 @@ FIN_TAGS_PRIORITY = [
     ("PROVINCIAL", "CREDITO BANCO PROVINCIAL", "#b45309"),
 ]
 
-# Etiquetas de "LIQUIDADO" (credito totalmente pagado) por entidad
+# Etiquetas de "liquidado" (credito totalmente pagado) por entidad
 LIQUID_TAGS = [
-    ("ARCA", "LIQUIDADO ARCA", "#213C83"),
-    ("PIVCA", "LIQUIDADO PIVCA", "#7c3aed"),
-    ("BANESCO", "LIQUIDADO BANESCO", "#0a7d2c"),
-    ("PROVINCIAL", "LIQUIDADO PROVINCIAL", "#b45309"),
+    ("ARCA", "liquidado arca", "#213C83"),
+    ("PIVCA", "liquidado pivca", "#7c3aed"),
+    ("BANESCO", "liquidado banesco", "#0a7d2c"),
+    ("PROVINCIAL", "liquidado provincial", "#b45309"),
 ]
 
 STAGE_STATUS = {
