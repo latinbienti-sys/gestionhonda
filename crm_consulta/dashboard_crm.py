@@ -307,6 +307,7 @@ def main():
             "ci_rif": l.get("x_contenido_rif") or "",
             "notas": clean_html(l.get("description"))[:1200],
             "tags_extra": ", ".join(otras_tags),
+            "crm_url": f"{BASE}/web#id={l['id']}&model=crm.lead&view_type=form",
         })
 
     # ---- Build HTML ----
@@ -365,6 +366,8 @@ def main():
   .est.GESTION {{ background:#fef9c3; color:#854d0e; }}
   .est.OTROS {{ background:#f3f4f6; color:#374151; }}
   .est.LIQUIDADO {{ background:#cffafe; color:#0e7490; }}
+  .crm-link {{ display:inline-block; padding:5px 11px; border-radius:8px; background:#213C83; color:#fff; font-weight:700; font-size:12px; text-decoration:none; white-space:nowrap; }}
+  .crm-link:hover {{ background:#15295e; }}
   .foot {{ text-align:center; color:#999; font-size:12px; padding:18px; }}
   .count-line {{ font-size:13px; color:#666; margin-bottom:8px; }}
 </style>
@@ -438,7 +441,7 @@ def main():
         <thead><tr>
           <th>Entidad</th><th>Cliente</th><th>Oportunidad / Modelo</th><th>Etapa</th>
           <th>Estado</th><th>Monto Total</th><th>Monto Aprobado</th><th>Plazo</th>
-          <th>Fecha Aprob.</th><th>Asesor</th><th>Notas internas</th>
+          <th>Fecha Aprob.</th><th>Asesor</th><th>Notas internas</th><th>🔗 CRM</th>
         </tr></thead>
         <tbody id="tabla"></tbody>
       </table>
@@ -715,7 +718,7 @@ function renderTabla() {{
   const tb = document.getElementById('tabla');
   document.getElementById('countLine').textContent = `Mostrando ${{rows.length}} de ${{DATA.length}} clientes con etiqueta financiera.`;
   if (rows.length === 0) {{
-    tb.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#999;">Sin resultados</td></tr>';
+    tb.innerHTML = '<tr><td colspan="12" style="text-align:center;color:#999;">Sin resultados</td></tr>';
     return;
   }}
   tb.innerHTML = rows.map(d => {{
@@ -733,6 +736,7 @@ function renderTabla() {{
       <td>${{d.fecha_aprobacion || ''}}</td>
       <td>${{d.asesor || ''}}</td>
       <td>${{notas}}</td>
+      <td><a class="crm-link" href="${{d.crm_url}}" target="_blank" rel="noopener">🔗 Abrir</a></td>
     </tr>`;
   }}).join('');
 }}
@@ -769,11 +773,11 @@ document.getElementById('fBuscar').addEventListener('input', e => {{
 document.getElementById('fmtCsv').addEventListener('click', () => {{
   const rows = filtrado();
   const enc = s => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
-  const cols = ['Entidad','Cliente','Oportunidad','Modelo','Etapa','Estado','MontoTotal','MontoAprobado','Plazo','FechaAprobacion','Asesor','Email','Telefono','Notas'];
+  const cols = ['Entidad','Cliente','Oportunidad','Modelo','Etapa','Estado','MontoTotal','MontoAprobado','Plazo','FechaAprobacion','Asesor','Email','Telefono','Notas','EnlaceCRM'];
   let csv = cols.join(',') + '\\n';
   rows.forEach(d => {{
     csv += [d.entidades.join(' '), d.nombre, d.oportunidad, d.modelo, d.etapa_original, d.estado,
-      d.monto_total, d.monto_aprobado, d.plazo, d.fecha_aprobacion, d.asesor, d.email, d.telefono, d.notas]
+      d.monto_total, d.monto_aprobado, d.plazo, d.fecha_aprobacion, d.asesor, d.email, d.telefono, d.notas, d.crm_url]
       .map(enc).join(',') + '\\n';
   }});
   const blob = new Blob(['\\ufeff'+csv], {{type:'text/csv;charset=utf-8;'}});
