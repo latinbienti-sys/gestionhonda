@@ -54,7 +54,7 @@ LEAD_FIELDS = [
     "description",
     "x_montototal", "x_monto_aprobado", "x_plazo", "x_fecha_aprobacion",
     "x_product_interes", "x_bancos_cuenta", "x_contenido_rif",
-    "date_open", "date_last_stage_update",
+    "date_open", "date_last_stage_update", "create_date",
 ]
 
 cj = http.cookiejar.CookieJar()
@@ -297,6 +297,7 @@ def main():
             "entidad_principal": entidades[0]["label"],
             "entidad_colores": {e["label"]: e["color"] for e in entidades},
             "fecha_aprobacion": (l.get("x_fecha_aprobacion") or ""),
+            "mes": (l.get("create_date") or "")[:7],
             "plazo": str(l.get("x_plazo") or ""),
             "monto_total": fmt_money(l.get("x_montototal")),
             "monto_aprobado": fmt_money(l.get("x_monto_aprobado")),
@@ -425,6 +426,9 @@ def main():
       <span class="chip ent" data-ent="PIVCA" style="border-color:#7c3aed;">PIVCA</span>
       <span class="chip ent" data-ent="BANESCO" style="border-color:#0a7d2c;">BANESCO</span>
       <span class="chip ent" data-ent="PROVINCIAL" style="border-color:#b45309;">PROVINCIAL</span>
+      <select id="fMes">
+        <option value="ALL">Mes: Todos</option>
+      </select>
       <select id="fEstado">
         <option value="ALL">Estado: Todos</option>
         <option value="FACTURADO">Facturados</option>
@@ -457,7 +461,7 @@ const HIST = {json_hist};
 const ENTIDADES = ['ARCA','PIVCA','BANESCO','PROVINCIAL'];
 const COLOR_ENT = {{ 'ARCA':'#213C83', 'PIVCA':'#7c3aed', 'BANESCO':'#0a7d2c', 'PROVINCIAL':'#b45309' }};
 
-let fEnt = 'ALL', fEstado = 'ALL', fBuscar = '';
+let fEnt = 'ALL', fEstado = 'ALL', fBuscar = '', fMes = 'ALL';
 let chartEnt, chartDonut, chartEstado, chartMontos, chartHist;
 let histVista = 'solicitadas';
 
@@ -470,6 +474,7 @@ function filtrado() {{
   return DATA.filter(d => {{
     if (fEnt !== 'ALL' && d.entidad_principal !== fEnt) return false;
     if (fEstado !== 'ALL' && d.estado !== fEstado) return false;
+    if (fMes !== 'ALL' && d.mes !== fMes) return false;
     if (q) {{
       const hay = [d.nombre, d.modelo, d.oportunidad, d.asesor, d.etapa, (d.entidades||[]).join(' ')]
         .join(' ').toLowerCase().includes(q);
@@ -713,10 +718,34 @@ document.getElementById('btnHistOrder').addEventListener('click', () => {{
   renderHist();
 }});
 
+// Filtro de mes (Relación de Clientes): opciones según meses con solicitudes
+const MESES_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+function labelMes(m) {{
+  const [y, mo] = m.split('-');
+  return MESES_ES[parseInt(mo,10)-1] + ' ' + y;
+}}
+function pctSelMes() {{
+  const meses = [...new Set(DATA.map(d => d.mes).filter(Boolean))].sort();
+  const sel = document.getElementById('fMes');
+  meses.forEach(m => {{
+    const o = document.createElement('option');
+    o.value = m; o.textContent = labelMes(m);
+    sel.appendChild(o);
+  }});
+}}
+// Fallback: completar el mes de cada cliente desde HIST (por id) si create_date no vino en DATA
+DATA.forEach(d => {{
+  if (!d.mes) {{
+    const h = HIST.find(x => x.id === d.id);
+    if (h) d.mes = h.mes || '';
+  }}
+}});
+pctSelMes();
+
 function renderTabla() {{
   const rows = filtrado();
   const tb = document.getElementById('tabla');
-  document.getElementById('countLine').textContent = `Mostrando ${{rows.length}} de ${{DATA.length}} clientes con etiqueta financiera.`;
+  document.getElementById('countLine').textContent = `Mostrando ${{rows.length}} de ${{DATA.length}} clientes con etiqueta financiera` + (fMes !== 'ALL' ? ` · Mes: ${{labelMes(fMes)}}` : '') + '.';
   if (rows.length === 0) {{
     tb.innerHTML = '<tr><td colspan="12" style="text-align:center;color:#999;">Sin resultados</td></tr>';
     return;
@@ -764,6 +793,9 @@ document.querySelectorAll('.chip.hist-chip').forEach(ch => {{
 }});
 document.getElementById('fEstado').addEventListener('change', e => {{
   fEstado = e.target.value; aplicarFiltro();
+}});
+document.getElementById('fMes').addEventListener('change', e => {{
+  fMes = e.target.value; aplicarFiltro();
 }});
 document.getElementById('fBuscar').addEventListener('input', e => {{
   fBuscar = e.target.value; aplicarFiltro();
